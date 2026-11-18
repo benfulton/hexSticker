@@ -1,5 +1,13 @@
 # polaroid
 
+## polaroid 0.2.1
+
+- Added a **Save Project** button to download current UI settings as YAML.
+- Projects now include the background image filename. **Load Project** restores
+  settings from YAML and reminds you which background PNG to upload again.
+- Fixed an undefined `h_size` error when generating stickers. Plot margins now
+  follow the selected border width.
+
 ## polaroid 0.2.0
 
 - Added hexagon direction feature.
@@ -35,4 +43,3 @@
 * Added hexagon border_width feature.
 * Added Google Font loader. 
 * Removed draw-again.
-

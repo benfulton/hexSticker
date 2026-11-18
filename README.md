@@ -35,6 +35,15 @@ polaroid()
 
 ### Features
 
+- Use **Save Project** to download the current hexagon, image position and size,
+  URL, package label, and font settings as a YAML file. Settings use the UI input
+  names as keys, with the background image filename in `background_image`
+  (`null` when no image is selected). Uploaded image contents are not included.
+  Use **Load Project** to select a YAML file and restore the settings, then upload
+  the PNG shown in the background image reminder. Older projects without an image
+  filename also load. Click **Apply** to load a saved font. The existing **Save**
+  button still downloads the sticker as PNG.
+
 - Hexagons with `Vertical` and `Horizontal`
 
 ![Screenshot 2025-03-30 at 12 13 20 AM](https://github.com/user-attachments/assets/7ebfa13c-7ba8-4cea-8cc7-d0bb1a7f0e7a)

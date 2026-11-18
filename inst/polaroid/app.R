@@ -81,7 +81,8 @@ ui <- argonDash::argonDashPage(
         buttonLabel = "PNG",
         placeholder = "",
         accept = ".png"
-      )
+      ),
+      textOutput("background_filename")
     ),
     fluidRow(
       column(
@@ -97,6 +98,10 @@ ui <- argonDash::argonDashPage(
         width = 6,
         myDnButton("imgdn", type = "danger")
       )
+    ),
+    myDnButton("projectdn", label = "Save Project", type = "primary"),
+    fileInput("project", label = NULL, buttonLabel = "Load Project",
+      placeholder = "Select YAML file", accept = c(".yaml", ".yml")
     ),
     argonSidebarDivider(),
     textInputIcon(
@@ -360,14 +365,135 @@ server <- function(input, output, session) {
   # Define reactive values to store state
   values <- reactiveValues(
     im = NULL,
+    image_filename = NULL,
     font_loaded = FALSE,
     current_font = NULL
   )
+
+  setting_names <- c(
+    "background_color", "background_alpha", "border_color", "border_width",
+    "hex_direction", "img_x", "img_y", "img_width", "img_height",
+    "url", "url_color", "url_x", "url_y", "url_size", "url_angle",
+    "pkg_name", "pkg_color", "pkg_x", "pkg_y", "pkg_size", "font"
+  )
+  slider_ranges <- list(
+    background_alpha = c(0, 1), border_width = c(0.1, 3),
+    img_x = c(-2, 2), img_y = c(-2, 2),
+    img_width = c(0, 10), img_height = c(0, 10),
+    url_x = c(0, 2), url_y = c(0, 2), url_size = c(0, 20),
+    pkg_x = c(0, 3), pkg_y = c(0, 3), pkg_size = c(1, 20)
+  )
+  color_names <- c("background_color", "border_color", "url_color", "pkg_color")
+
+  output$background_filename <- renderText({
+    if (is.null(values$image_filename)) {
+      return("")
+    }
+    paste0(
+      "Background image: ", values$image_filename,
+      if (is.null(values$im)) " (upload this PNG to restore the image)" else ""
+    )
+  })
+
+  output$projectdn <- downloadHandler(
+    filename = function() {
+      paste0("polaroid_", gsub("[^a-zA-Z0-9]", "_", input$pkg_name), ".yaml")
+    },
+    content = function(file) {
+      settings <- reactiveValuesToList(input)[setting_names]
+      settings["background_image"] <- list(values$image_filename)
+      yaml::write_yaml(settings, file)
+    },
+    contentType = "application/yaml"
+  )
+
+  observeEvent(input$project, {
+    req(input$project)
+    tryCatch({
+      if (input$project$size > 1024 * 1024) {
+        stop("Project file too large (max 1MB)")
+      }
+      settings <- yaml::read_yaml(input$project$datapath, eval.expr = FALSE)
+      if (!is.list(settings) || is.null(names(settings)) ||
+          anyDuplicated(names(settings)) ||
+          !all(setting_names %in% names(settings)) ||
+          any(!names(settings) %in% c(setting_names, "background_image"))) {
+        stop("Expected a project YAML mapping with all UI settings")
+      }
+      for (name in setting_names) {
+        value <- settings[[name]]
+        if (length(value) != 1L || is.na(value)) {
+          stop(paste("Invalid setting:", name))
+        }
+        if (name %in% names(slider_ranges)) {
+          limits <- slider_ranges[[name]]
+          if (!is.numeric(value) || !is.finite(value) ||
+              value < limits[1] || value > limits[2]) {
+            stop(paste("Out-of-range or nonnumeric setting:", name))
+          }
+        } else if (name == "url_angle") {
+          if (!is.atomic(value) || !as.character(value) %in% c("0", "30", "330")) {
+            stop("Invalid setting: url_angle")
+          }
+        } else if (!is.character(value)) {
+          stop(paste("Expected text for setting:", name))
+        }
+        if (name %in% color_names && !grepl("^#[0-9A-Fa-f]{6}$", value)) {
+          stop(paste("Invalid color:", name))
+        }
+        if (name == "hex_direction" && !value %in% c("up", "down")) {
+          stop("Invalid setting: hex_direction")
+        }
+      }
+      image_filename <- settings$background_image
+      if (!is.null(image_filename) &&
+          (!is.character(image_filename) || length(image_filename) != 1L ||
+           is.na(image_filename) || !nzchar(image_filename) ||
+           grepl("[/\\\\]", image_filename) || image_filename %in% c(".", ".."))) {
+        stop("background_image must be a filename, not a path")
+      }
+
+      for (name in setting_names) {
+        value <- settings[[name]]
+        if (name %in% names(slider_ranges)) {
+          updateSliderInput(session, name, value = value)
+        } else if (name %in% color_names) {
+          colourpicker::updateColourInput(session, name, value = value)
+        } else if (name %in% c("hex_direction", "url_angle")) {
+          shinyWidgets::updateRadioGroupButtons(session, name, selected = as.character(value))
+        } else {
+          updateTextInput(session, name, value = value)
+        }
+      }
+      values$im <- NULL
+      values$image_filename <- image_filename
+      values$font_loaded <- FALSE
+      values$current_font <- "Aller_Rg"
+      output$img <- renderPlot({ NULL })
+      output$imgdn <- downloadHandler(
+        filename = "polaroid.png",
+        content = function(file) {
+          showNotification("Please upload an image first", type = "warning")
+          req(FALSE)
+        }
+      )
+      showNotification(
+        paste0("Project loaded.",
+          if (!is.null(image_filename)) paste0(" Upload ", image_filename, " to restore the background image."),
+          if (nzchar(settings$font)) " Click Apply to load the saved font."
+        ),
+        type = "message", duration = NULL
+      )
+    }, error = function(e) {
+      showNotification(paste("Error loading project:", conditionMessage(e)), type = "error")
+    })
+  })
 
   # clear logic
   observeEvent(input$clear,
     {
       values$im <- NULL
+      values$image_filename <- NULL
       output$img <- renderPlot({
         NULL
       })
@@ -458,6 +584,7 @@ server <- function(input, output, session) {
         }
 
         values$im <- readPNG(example_path)
+        values$image_filename <- basename(example_path)
 
         s <- mysticker(values$im, input$img_x, input$img_y, input$img_width, input$img_height,
           input$pkg_name, input$pkg_x, input$pkg_y, input$pkg_color, input$pkg_size,
@@ -499,6 +626,7 @@ server <- function(input, output, session) {
     tryCatch(
       {
         values$im <- readPNG(input$file$datapath)
+        values$image_filename <- basename(input$file$name)
         showNotification("Image loaded successfully", type = "message")
       },
       error = function(e) {
@@ -531,6 +659,7 @@ server <- function(input, output, session) {
       input$pkg_x
       input$pkg_y
       input$pkg_size
+      values$im
     },
     {
       if (is.null(values$im)) {
@@ -631,7 +760,7 @@ server <- function(input, output, session) {
         ymin = img_y,
         ymax = img_y + img_height
       ) +
-      theme_sticker(size = h_size)
+      theme_sticker(size = border_width)
 
     # Improved saving with error handling
     tryCatch(

@@ -16,7 +16,7 @@
 polaroid <- function() {
   required_pkgs <- c("argonDash", "argonR", "colourpicker", "hexSticker",
                      "htmltools", "magick", "shinyjs", "showtext",
-                     "stringr", "sysfonts")
+                     "stringr", "sysfonts", "yaml")
 
   missing_pkgs <- required_pkgs[!vapply(required_pkgs, requireNamespace, logical(1), quietly = TRUE)]
 
